@@ -4,13 +4,13 @@
 pub mod fmtlog;
 pub mod log_v0_4;
 
-// defmt types and topics are available with defmt-v1
-// (needed by both senders using defmt-sink and receivers subscribing to defmt logs)
-#[cfg(feature = "defmt-v1")]
+// defmt message types and topics for network-based defmt logging
+// (needed by both senders and receivers of defmt frames over ergot network)
+#[cfg(feature = "defmt-network")]
 pub mod defmtlog;
 
-// DefmtSink implementation requires defmt-sink feature
-// (only needed if you want ergot to act as a defmt network logger)
+// DefmtSink implementation - defmt global_logger that sends over ergot network
+// (only needed if you want ergot to act as the defmt global_logger)
 #[cfg(feature = "defmt-sink")]
 pub mod defmt_v1;
 

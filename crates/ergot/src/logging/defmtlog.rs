@@ -6,14 +6,19 @@
 //!
 //! ## Feature Flags
 //!
-//! - **`defmt-v1`**: Enables defmt::Format derives on ergot types and provides
-//!   these message types. Use this if you want to log ergot types with your own
-//!   defmt logger (e.g., defmt-rtt), or if you want to receive defmt logs from
-//!   the network.
+//! This module requires the **`defmt-network`** feature flag.
 //!
-//! - **`defmt-sink`**: Enables the [`DefmtSink`](super::defmt_v1::DefmtSink)
-//!   implementation that sends defmt logs over the ergot network. Implies `defmt-v1`.
-//!   Use this if you want ergot to act as a network-based defmt logger.
+//! - **`defmt-v1`**: Enables defmt::Format derives on ergot types. Use when you
+//!   want to log ergot types with your own defmt logger (e.g., defmt-rtt).
+//!   Does NOT include these message types.
+//!
+//! - **`defmt-network`**: Enables these message types and topics. Use when you
+//!   want to send or receive defmt logs over the ergot network. Does NOT require
+//!   the defmt dependency (host can receive without having defmt).
+//!
+//! - **`defmt-sink`**: Enables [`DefmtSink`](super::defmt_v1::DefmtSink) for
+//!   using ergot as the defmt global_logger. Implies both `defmt-v1` and
+//!   `defmt-network`.
 //!
 //! ## When to Use defmt vs fmt Logging
 //!
@@ -65,8 +70,19 @@ use serde::{Deserialize, Serialize};
 /// A borrowed defmt frame for sending
 ///
 /// Contains the raw encoded defmt frame bytes. These bytes are already
-/// encoded (typically with rzcobs) by the defmt encoder and are ready
-/// to be transmitted over the network.
+/// encoded by the defmt encoder and are ready to be transmitted over the network.
+///
+/// ## Usage with DefmtSink
+///
+/// This type is used with [`DefmtSink::init_with_sender`](super::defmt_v1::DefmtSink::init_with_sender):
+/// ```ignore
+/// DefmtSink::init_with_sender(|frame| {
+///     _ = STACK.topics().broadcast_borrowed::<ErgotDefmtTxTopic>(
+///         &ErgotDefmtTx { frame },
+///         None,
+///     );
+/// });
+/// ```
 ///
 /// Type-punned with [`ErgotDefmtRx`] and `ErgotDefmtRxOwned` (with the `std` feature enabled).
 #[derive(Serialize, Schema, Clone)]

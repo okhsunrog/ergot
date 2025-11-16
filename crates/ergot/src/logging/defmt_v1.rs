@@ -131,7 +131,17 @@ use critical_section::CriticalSection;
 ///
 /// This should be large enough for most log messages. defmt frames are
 /// typically quite small (10-50 bytes for simple logs, up to a few hundred
-/// for complex ones). If a frame exceeds this size, it will be truncated.
+/// for complex ones).
+///
+/// **Truncation behavior**: If a log message produces a frame larger than
+/// this size, the entire frame is **dropped** (not sent) to avoid corrupting
+/// the defmt stream. This is safer than sending partial frames which would
+/// cause decoding errors on the host.
+///
+/// **Sizing guidance**:
+/// - 512 bytes handles ~95% of typical embedded log messages
+/// - Increase if you log large structures or long strings
+/// - Decrease to save RAM on very constrained devices
 const MAX_FRAME_SIZE: usize = 512;
 
 /// Frame buffer storage
@@ -142,6 +152,8 @@ struct FrameBuffer {
     pos: UnsafeCell<usize>,
     /// Whether the logger is currently acquired
     acquired: AtomicBool,
+    /// Whether the current frame was truncated (too large for buffer)
+    truncated: AtomicBool,
 }
 
 unsafe impl Sync for FrameBuffer {}
@@ -152,6 +164,7 @@ impl FrameBuffer {
             buffer: UnsafeCell::new([0u8; MAX_FRAME_SIZE]),
             pos: UnsafeCell::new(0),
             acquired: AtomicBool::new(false),
+            truncated: AtomicBool::new(false),
         }
     }
 
@@ -164,9 +177,14 @@ impl FrameBuffer {
         unsafe {
             *self.pos.get() = 0;
         }
+        self.truncated.store(false, Ordering::Relaxed);
     }
 
     /// Write bytes to the buffer
+    ///
+    /// If the bytes don't fit in the remaining buffer space, sets the
+    /// truncated flag and copies what fits. The truncated frame will be
+    /// dropped in release() to avoid sending corrupted data.
     ///
     /// # Safety
     ///
@@ -184,8 +202,11 @@ impl FrameBuffer {
                 *pos += to_copy;
             }
 
-            // If we couldn't fit all bytes, silently truncate
-            // (defmt's write() is not allowed to fail)
+            // If we couldn't fit all bytes, mark as truncated
+            // The frame will be dropped in release() to avoid corruption
+            if to_copy < bytes.len() {
+                self.truncated.store(true, Ordering::Relaxed);
+            }
         }
     }
 
@@ -374,16 +395,26 @@ impl DefmtSink {
     /// Acquire the logger (called by defmt before logging)
     ///
     /// This uses a critical section to ensure thread/interrupt safety.
-    /// It will panic if the logger is already acquired (re-entrant logging).
+    ///
+    /// **Re-entrancy handling**: If the logger is already acquired (re-entrant
+    /// logging attempt), this will silently fail and the log message will be
+    /// dropped. This is safer than panicking in a logger, which could crash
+    /// the system in embedded contexts.
+    ///
+    /// In debug builds, re-entrancy triggers a debug_assert to help catch bugs.
     pub fn acquire() {
         critical_section::with(|_cs| {
             // Check if already acquired (would indicate re-entrant logging)
-            if FRAME_BUFFER
+            let acquired = FRAME_BUFFER
                 .acquired
                 .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-            {
-                panic!("defmt logger re-entrancy detected");
+                .is_ok();
+
+            if !acquired {
+                // Re-entrant logging detected - drop this log message
+                // Debug builds will catch this, release builds silently drop
+                debug_assert!(false, "defmt logger re-entrancy detected - log dropped");
+                return;
             }
 
             // Reset the buffer for a new frame
@@ -398,6 +429,9 @@ impl DefmtSink {
     /// The bytes received here are already encoded by defmt. We just need
     /// to buffer them for transmission when release() is called.
     ///
+    /// **IMPORTANT**: You must call [`init_with_sender`](Self::init_with_sender)
+    /// before any defmt logging occurs, otherwise logs will be silently dropped.
+    ///
     /// # Safety
     ///
     /// Must only be called when the logger is acquired.
@@ -406,6 +440,12 @@ impl DefmtSink {
         if !FRAME_BUFFER.acquired.load(Ordering::Acquire) {
             return;
         }
+
+        // Debug builds check that init_with_sender was called
+        debug_assert!(
+            DEFMT_SEND.initialized.load(Ordering::Acquire),
+            "DefmtSink::init_with_sender() must be called before logging"
+        );
 
         // Buffer the encoded bytes
         unsafe {
@@ -430,15 +470,26 @@ impl DefmtSink {
     /// This sends the buffered frame over the ergot network and releases
     /// the logger for the next log message.
     ///
+    /// **Truncation handling**: If the frame exceeded MAX_FRAME_SIZE, it is
+    /// dropped entirely rather than sending a corrupted partial frame. This
+    /// prevents decoding errors on the host side.
+    ///
     /// # Safety
     ///
     /// Must only be called when the logger is acquired.
     pub unsafe fn release() {
-        // Get the complete frame
-        let frame = unsafe { FRAME_BUFFER.frame() };
+        // Check if the frame was truncated
+        let was_truncated = FRAME_BUFFER.truncated.load(Ordering::Relaxed);
 
-        // Send it over ergot using the registered send function
-        DEFMT_SEND.send(frame);
+        if !was_truncated {
+            // Get the complete frame
+            let frame = unsafe { FRAME_BUFFER.frame() };
+
+            // Send it over ergot using the registered send function
+            DEFMT_SEND.send(frame);
+        }
+        // If truncated, silently drop the frame to avoid sending corrupted data
+        // Debug builds will have caught this in write() with the truncated flag
 
         // Release the lock
         FRAME_BUFFER.acquired.store(false, Ordering::Release);

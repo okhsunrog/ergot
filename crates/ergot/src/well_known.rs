@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::fmtlog::ErgotFmtRxOwned;
 use crate::fmtlog::{ErgotFmtRx, ErgotFmtTx};
 
-#[cfg(all(feature = "defmt-v1", feature = "std"))]
+#[cfg(all(feature = "defmt-network", feature = "std"))]
 use crate::logging::defmtlog::ErgotDefmtRxOwned;
-#[cfg(feature = "defmt-v1")]
+#[cfg(feature = "defmt-network")]
 use crate::logging::defmtlog::{ErgotDefmtRx, ErgotDefmtTx};
 
 use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
@@ -28,12 +28,12 @@ topic!(
 );
 
 // defmt frame logging topics
-#[cfg(feature = "defmt-v1")]
+#[cfg(feature = "defmt-network")]
 topic!(ErgotDefmtTxTopic, ErgotDefmtTx<'a>, "ergot/.well-known/defmt");
-#[cfg(feature = "defmt-v1")]
+#[cfg(feature = "defmt-network")]
 topic!(ErgotDefmtRxTopic, ErgotDefmtRx<'a>, "ergot/.well-known/defmt");
 
-#[cfg(all(feature = "defmt-v1", feature = "std"))]
+#[cfg(all(feature = "defmt-network", feature = "std"))]
 topic!(
     ErgotDefmtRxOwnedTopic,
     ErgotDefmtRxOwned,
