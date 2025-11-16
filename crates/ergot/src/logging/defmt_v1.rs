@@ -127,11 +127,6 @@ use core::{
 
 use critical_section::CriticalSection;
 
-use crate::{
-    logging::defmtlog::ErgotDefmtTx, net_stack::NetStackHandle, traits::Topic,
-    well_known::ErgotDefmtTxTopic,
-};
-
 /// Maximum size of a single defmt frame
 ///
 /// This should be large enough for most log messages. defmt frames are
@@ -395,15 +390,13 @@ impl DefmtSink {
             unsafe {
                 FRAME_BUFFER.reset();
             }
-
-            // Initialize the defmt Encoder
-            unsafe {
-                defmt::export::acquire();
-            }
         });
     }
 
     /// Write bytes to the frame buffer (called by defmt during logging)
+    ///
+    /// The bytes received here are already encoded by defmt. We just need
+    /// to buffer them for transmission when release() is called.
     ///
     /// # Safety
     ///
@@ -414,11 +407,10 @@ impl DefmtSink {
             return;
         }
 
-        // defmt v1.0 handles encoding internally, we just write the bytes
-        FRAME_BUFFER.write(bytes);
-
-        // Forward to defmt's internal write
-        defmt::export::write(bytes);
+        // Buffer the encoded bytes
+        unsafe {
+            FRAME_BUFFER.write(bytes);
+        }
     }
 
     /// Flush the logger (called by defmt during logging)
@@ -435,17 +427,15 @@ impl DefmtSink {
 
     /// Release the logger (called by defmt after logging)
     ///
-    /// This finalizes the frame and sends it over the ergot network.
+    /// This sends the buffered frame over the ergot network and releases
+    /// the logger for the next log message.
     ///
     /// # Safety
     ///
     /// Must only be called when the logger is acquired.
     pub unsafe fn release() {
-        // Finalize defmt's encoder
-        defmt::export::release();
-
         // Get the complete frame
-        let frame = FRAME_BUFFER.frame();
+        let frame = unsafe { FRAME_BUFFER.frame() };
 
         // Send it over ergot using the registered send function
         DEFMT_SEND.send(frame);
@@ -456,9 +446,28 @@ impl DefmtSink {
 
     /// Disable ergot's internal defmt logging
     ///
-    /// This is automatically called when registering DefmtSink as the global
-    /// logger to prevent infinite loops. You typically don't need to call this
-    /// manually.
+    /// **Current status**: ergot does not currently use defmt for internal logging,
+    /// so calling this is optional. This API is provided for future compatibility
+    /// and to mirror the `log_v0_4` module's GEIL system.
+    ///
+    /// **When to call this**: If you're using DefmtSink as your global_logger AND
+    /// ergot adds internal defmt logging in the future, call this after defining
+    /// your global_logger to prevent infinite loops.
+    ///
+    /// **How to use**:
+    /// ```ignore
+    /// #[defmt::global_logger]
+    /// struct GlobalLogger;
+    ///
+    /// unsafe impl defmt::Logger for GlobalLogger { /* ... */ }
+    ///
+    /// fn init() {
+    ///     // Prevent future ergot internal logs from creating loops
+    ///     critical_section::with(|cs| {
+    ///         DefmtSink::disable_internal_with_cs(cs);
+    ///     });
+    /// }
+    /// ```
     #[cfg(not(feature = "std"))]
     pub fn disable_internal_with_cs(cs: CriticalSection<'_>) {
         internal::GEID_STORE_GLOBAL.set_disabled_with_cs(cs);
@@ -466,9 +475,10 @@ impl DefmtSink {
 
     /// Disable ergot's internal defmt logging (atomic version)
     ///
-    /// This is automatically called when registering DefmtSink as the global
-    /// logger to prevent infinite loops. You typically don't need to call this
-    /// manually.
+    /// **Current status**: ergot does not currently use defmt for internal logging,
+    /// so calling this is optional. This API is provided for future compatibility.
+    ///
+    /// See [`disable_internal_with_cs`](Self::disable_internal_with_cs) for details.
     #[cfg(feature = "std")]
     pub fn disable_internal_atomic() {
         internal::GEID_STORE_GLOBAL.set_disabled_atomic();
