@@ -400,8 +400,6 @@ impl DefmtSink {
     /// logging attempt), this will silently fail and the log message will be
     /// dropped. This is safer than panicking in a logger, which could crash
     /// the system in embedded contexts.
-    ///
-    /// In debug builds, re-entrancy triggers a debug_assert to help catch bugs.
     pub fn acquire() {
         critical_section::with(|_cs| {
             // Check if already acquired (would indicate re-entrant logging)
@@ -411,9 +409,7 @@ impl DefmtSink {
                 .is_ok();
 
             if !acquired {
-                // Re-entrant logging detected - drop this log message
-                // Debug builds will catch this, release builds silently drop
-                debug_assert!(false, "defmt logger re-entrancy detected - log dropped");
+                // Re-entrant logging detected - silently drop this log message
                 return;
             }
 
@@ -440,12 +436,6 @@ impl DefmtSink {
         if !FRAME_BUFFER.acquired.load(Ordering::Acquire) {
             return;
         }
-
-        // Debug builds check that init_with_sender was called
-        debug_assert!(
-            DEFMT_SEND.initialized.load(Ordering::Acquire),
-            "DefmtSink::init_with_sender() must be called before logging"
-        );
 
         // Buffer the encoded bytes
         unsafe {
