@@ -22,3 +22,5 @@ pub mod nusb_bulk;
 
 #[cfg(feature = "embedded-io-async-v0_6")]
 pub mod embedded_io;
+
+pub mod can_fd;
