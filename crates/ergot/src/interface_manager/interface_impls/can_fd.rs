@@ -344,9 +344,10 @@ pub fn encode_frame<T: Serialize>(
     priority: CanPriority,
     buf: &mut [u8],
 ) -> Result<(CanFrameId, usize), CanEncodeError> {
-    if buf.len() < MAX_CAN_PAYLOAD_HDR_SIZE {
-        return Err(CanEncodeError::PayloadTooLarge);
-    }
+    // Don't do an early bounds check here - the actual header size varies based on
+    // address values (varint encoding) and presence of AnyAll appendix. Let
+    // serialization fail if there's not enough space, then check final size against
+    // CAN_FD_MAX_PAYLOAD.
 
     let can_id = CanFrameId::from_header_with_priority(hdr, priority);
     let payload_hdr = CanPayloadHeader::from_header(hdr);
