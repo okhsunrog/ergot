@@ -394,9 +394,10 @@ pub fn encode_frame_raw(
     priority: CanPriority,
     buf: &mut [u8],
 ) -> Result<(CanFrameId, usize), CanEncodeError> {
-    if buf.len() < MAX_CAN_PAYLOAD_HDR_SIZE + body.len() {
-        return Err(CanEncodeError::PayloadTooLarge);
-    }
+    // Don't do an early bounds check here - the actual header size varies based on
+    // address values (varint encoding) and presence of AnyAll appendix. Let
+    // serialization fail if there's not enough space, then check final size against
+    // CAN_FD_MAX_PAYLOAD.
 
     let can_id = CanFrameId::from_header_with_priority(hdr, priority);
     let payload_hdr = CanPayloadHeader::from_header(hdr);
@@ -815,5 +816,42 @@ mod tests {
         // With worst-case header (no any/all), we should fit 32 bytes of body
         // Header: ~13 bytes worst case without any/all
         assert!(result.is_ok(), "Should fit 32-byte body with max header");
+    }
+
+    #[test]
+    fn test_large_raw_payload_with_small_header() {
+        // Regression test: encode_frame_raw should not reject valid payloads
+        // that fit when the actual header is small (low network IDs, no any/all)
+        let hdr = HeaderSeq {
+            src: Address {
+                network_id: 1,
+                node_id: 2,
+                port_id: 3,
+            },
+            dst: Address {
+                network_id: 1,
+                node_id: 4,
+                port_id: 5,
+            },
+            any_all: None,
+            seq_no: 100,
+            kind: FrameKind::ENDPOINT_REQ,
+            ttl: 16,
+        };
+
+        // With small addresses, header is ~7-8 bytes, so 50 bytes of body should fit
+        let body: [u8; 50] = [0xCD; 50];
+        let mut buf = [0u8; CAN_FD_MAX_PAYLOAD];
+
+        let result = encode_frame_raw(&hdr, &body, CanPriority::Normal, &mut buf);
+        assert!(
+            result.is_ok(),
+            "Should fit 50-byte body with minimal header, got {:?}",
+            result
+        );
+
+        let (_, len) = result.unwrap();
+        assert!(len <= CAN_FD_MAX_PAYLOAD);
+        assert!(len >= 50); // At least the body size
     }
 }
