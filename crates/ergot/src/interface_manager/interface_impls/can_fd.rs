@@ -496,6 +496,11 @@ pub fn decode_frame<'a>(can_id: CanFrameId, payload: &'a [u8]) -> Result<CanFram
     let is_err = kind == FrameKind::PROTOCOL_ERROR;
     let any_all = [0, 255].contains(&can_id.dst_port_id());
 
+    // Reject any/all + protocol error combination (matches wire_frames::decode_frame_partial)
+    if is_err && any_all {
+        return Err(CanDecodeError::InvalidFrameKind);
+    }
+
     // Reconstruct destination address from CAN ID + payload
     let dst = Address {
         network_id: payload_hdr.dst_network_id,
@@ -504,7 +509,7 @@ pub fn decode_frame<'a>(can_id: CanFrameId, payload: &'a [u8]) -> Result<CanFram
     };
 
     // Parse any/all appendix if needed
-    let (any_all_appendix, body_data) = if any_all && !is_err {
+    let (any_all_appendix, body_data) = if any_all {
         if remain.len() < 8 + 1 {
             return Err(CanDecodeError::PayloadTooShort);
         }
@@ -519,8 +524,12 @@ pub fn decode_frame<'a>(can_id: CanFrameId, payload: &'a [u8]) -> Result<CanFram
 
     // Handle error frames
     let body = if is_err {
-        let (err, _) = postcard::take_from_bytes::<ProtocolError>(body_data)
+        let (err, remain) = postcard::take_from_bytes::<ProtocolError>(body_data)
             .map_err(|_| CanDecodeError::DeserializationError)?;
+        // Reject error frames with trailing data (matches wire_frames::decode_frame_partial)
+        if !remain.is_empty() {
+            return Err(CanDecodeError::DeserializationError);
+        }
         Err(err)
     } else {
         Ok(body_data)
@@ -896,6 +905,55 @@ mod tests {
             result,
             Err(CanEncodeError::PayloadTooLarge),
             "Oversize payload should return PayloadTooLarge, not SerializationError"
+        );
+    }
+
+    #[test]
+    fn test_reject_any_all_protocol_error() {
+        // Protocol errors to any/all ports (0 or 255) are invalid per wire_frames spec
+        let payload_hdr = CanPayloadHeader {
+            dst_network_id: 1,
+            src: Address { network_id: 1, node_id: 2, port_id: 3 }.as_u32(),
+            seq_no: 100,
+            ttl: 16,
+        };
+        let mut buf = [0u8; 32];
+        let hdr_len = postcard::to_slice(&payload_hdr, &mut buf).unwrap().len();
+        // Serialize a proper ProtocolError after the header
+        let err = ProtocolError::RESERVED;
+        let err_len = postcard::to_slice(&err, &mut buf[hdr_len..]).unwrap().len();
+        let total_len = hdr_len + err_len;
+
+        // Error to port 0 (any)
+        let can_id = CanFrameId::new(CanPriority::Normal, 10, 0, FrameKind::PROTOCOL_ERROR);
+        let result = decode_frame(can_id, &buf[..total_len]);
+        assert_eq!(
+            result.err(),
+            Some(CanDecodeError::InvalidFrameKind),
+            "Should reject protocol error to any port (0)"
+        );
+
+        // Error to port 255 (all)
+        let can_id = CanFrameId::new(CanPriority::Normal, 10, 255, FrameKind::PROTOCOL_ERROR);
+        let result = decode_frame(can_id, &buf[..total_len]);
+        assert_eq!(
+            result.err(),
+            Some(CanDecodeError::InvalidFrameKind),
+            "Should reject protocol error to all port (255)"
+        );
+
+        // Error to specific port should be accepted
+        let can_id = CanFrameId::new(CanPriority::Normal, 10, 42, FrameKind::PROTOCOL_ERROR);
+        let result = decode_frame(can_id, &buf[..total_len]);
+        assert!(result.is_ok(), "Should accept protocol error to specific port");
+
+        // Error with trailing data should be rejected
+        buf[total_len] = 0xAB; // trailing byte
+        let result = decode_frame(can_id, &buf[..total_len + 1]);
+        assert_eq!(
+            result.err(),
+            Some(CanDecodeError::DeserializationError),
+            "Should reject protocol error with trailing data"
         );
     }
 }
