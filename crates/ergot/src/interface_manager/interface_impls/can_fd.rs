@@ -315,6 +315,18 @@ pub enum CanEncodeError {
     SerializationError,
 }
 
+impl CanEncodeError {
+    /// Map a postcard error to CanEncodeError
+    ///
+    /// Buffer-full errors are mapped to PayloadTooLarge for clearer diagnostics.
+    fn from_postcard(err: postcard::Error) -> Self {
+        match err {
+            postcard::Error::SerializeBufferFull => Self::PayloadTooLarge,
+            _ => Self::SerializationError,
+        }
+    }
+}
+
 /// Error when decoding a CAN frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanDecodeError {
@@ -358,28 +370,28 @@ pub fn encode_frame<T: Serialize>(
     // Serialize payload header
     payload_hdr
         .serialize(&mut serializer)
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     // Serialize any/all appendix if present
     if let Some(app) = hdr.any_all.as_ref() {
         serializer
             .output
             .try_extend(&app.key.0)
-            .map_err(|_| CanEncodeError::SerializationError)?;
+            .map_err(CanEncodeError::from_postcard)?;
         let nash_val: u32 = app.nash.as_ref().map(NameHash::to_u32).unwrap_or(0);
         nash_val
             .serialize(&mut serializer)
-            .map_err(|_| CanEncodeError::SerializationError)?;
+            .map_err(CanEncodeError::from_postcard)?;
     }
 
     // Serialize body
     body.serialize(&mut serializer)
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     let used = serializer
         .output
         .finalize()
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     if used.len() > CAN_FD_MAX_PAYLOAD {
         return Err(CanEncodeError::PayloadTooLarge);
@@ -409,30 +421,30 @@ pub fn encode_frame_raw(
     // Serialize payload header
     payload_hdr
         .serialize(&mut serializer)
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     // Serialize any/all appendix if present
     if let Some(app) = hdr.any_all.as_ref() {
         serializer
             .output
             .try_extend(&app.key.0)
-            .map_err(|_| CanEncodeError::SerializationError)?;
+            .map_err(CanEncodeError::from_postcard)?;
         let nash_val: u32 = app.nash.as_ref().map(NameHash::to_u32).unwrap_or(0);
         nash_val
             .serialize(&mut serializer)
-            .map_err(|_| CanEncodeError::SerializationError)?;
+            .map_err(CanEncodeError::from_postcard)?;
     }
 
     // Append raw body
     serializer
         .output
         .try_extend(body)
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     let used = serializer
         .output
         .finalize()
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     if used.len() > CAN_FD_MAX_PAYLOAD {
         return Err(CanEncodeError::PayloadTooLarge);
@@ -448,9 +460,8 @@ pub fn encode_frame_err(
     priority: CanPriority,
     buf: &mut [u8],
 ) -> Result<(CanFrameId, usize), CanEncodeError> {
-    if buf.len() < MAX_CAN_PAYLOAD_HDR_SIZE + 2 {
-        return Err(CanEncodeError::PayloadTooLarge);
-    }
+    // Don't do an early bounds check - let serialization fail if buffer is too small,
+    // which will be mapped to PayloadTooLarge via from_postcard.
 
     let can_id = CanFrameId::from_header_with_priority(hdr, priority);
     let payload_hdr = CanPayloadHeader::from_header(hdr);
@@ -461,16 +472,16 @@ pub fn encode_frame_err(
     // Serialize payload header
     payload_hdr
         .serialize(&mut serializer)
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     // Serialize error
     err.serialize(&mut serializer)
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     let used = serializer
         .output
         .finalize()
-        .map_err(|_| CanEncodeError::SerializationError)?;
+        .map_err(CanEncodeError::from_postcard)?;
 
     Ok((can_id, used.len()))
 }
@@ -854,5 +865,37 @@ mod tests {
         let (_, len) = result.unwrap();
         assert!(len <= CAN_FD_MAX_PAYLOAD);
         assert!(len >= 50); // At least the body size
+    }
+
+    #[test]
+    fn test_oversize_payload_returns_payload_too_large() {
+        // Verify that oversize payloads return PayloadTooLarge, not SerializationError
+        let hdr = HeaderSeq {
+            src: Address {
+                network_id: 1,
+                node_id: 2,
+                port_id: 3,
+            },
+            dst: Address {
+                network_id: 1,
+                node_id: 4,
+                port_id: 5,
+            },
+            any_all: None,
+            seq_no: 100,
+            kind: FrameKind::ENDPOINT_REQ,
+            ttl: 16,
+        };
+
+        // 65 bytes is guaranteed to exceed CAN FD max (64 bytes)
+        let body: [u8; 65] = [0xEE; 65];
+        let mut buf = [0u8; CAN_FD_MAX_PAYLOAD];
+
+        let result = encode_frame_raw(&hdr, &body, CanPriority::Normal, &mut buf);
+        assert_eq!(
+            result,
+            Err(CanEncodeError::PayloadTooLarge),
+            "Oversize payload should return PayloadTooLarge, not SerializationError"
+        );
     }
 }
