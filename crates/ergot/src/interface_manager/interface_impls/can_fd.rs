@@ -569,15 +569,12 @@ impl Interface for CanFdInterface {
 pub struct CanFdConfig {
     /// Default priority for outgoing messages
     pub default_priority: CanPriority,
-    /// This CAN segment's network ID (for address rewriting on bridges)
-    pub local_network_id: Option<u16>,
 }
 
 impl Default for CanFdConfig {
     fn default() -> Self {
         Self {
             default_priority: CanPriority::Normal,
-            local_network_id: None,
         }
     }
 }
