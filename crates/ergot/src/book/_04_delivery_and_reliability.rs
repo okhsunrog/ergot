@@ -113,7 +113,10 @@
 //!   configured, silence alone never changes the interface state.
 //! * A `state_notify` wait-queue is woken on **every interface state change**:
 //!   `Inactive → Active` on the first frame, `→ Inactive`/`Down` on a liveness
-//!   timeout, and on (de)registration. You `wait()` on it and react.
+//!   timeout, and on (de)registration. Use `wait_for()`/`wait_for_value()` to
+//!   register the waiter and inspect the current interface state without a
+//!   lost-wakeup window. A bare `wait().await` followed by a state read can
+//!   miss a transition that happens immediately before the waiter is linked.
 //!
 //! Each interface carries an `InterfaceState`:
 //!
@@ -124,9 +127,10 @@
 //!   worker exits and you re-register.
 //!
 //! The canonical reliability loop is therefore: register the interface with
-//! `liveness` and `state_notify`, `wait()` on the notify, and on each transition
-//! react — on `Active` mark the link up (and run any handshake), on `Inactive`
-//! wait a recovery window, on `Down` (or once the recovery window expires) tear
+//! `liveness` and `state_notify`, then use `wait_for_value(|| read_state())` so
+//! the condition is checked both before sleeping and after every wake. On
+//! `Active` mark the link up (and run any handshake), on `Inactive` wait a
+//! recovery window, and on `Down` (or once the recovery window expires) tear
 //! down and reconnect.
 //!
 //! ## Backpressure, lossiness, and the absence of QoS

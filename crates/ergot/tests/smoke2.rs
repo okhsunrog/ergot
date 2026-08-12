@@ -241,6 +241,52 @@ async fn req_resp() {
 }
 
 #[tokio::test]
+async fn request_can_be_sent_before_waiting_for_response() {
+    static STACK: TestNetStack = NetStack::new();
+
+    let server = STACK.endpoints().single_server::<ExampleEndpoint>(None);
+    let server = pin!(server);
+    let mut server = server.attach();
+
+    let client = STACK.endpoints().single_client::<ExampleEndpoint>();
+    let client = pin!(client);
+    let mut client = client.attach();
+    client
+        .send_request(Address::unknown(), &Example { a: 7, b: 35 }, None)
+        .unwrap();
+
+    server
+        .serve(async |req| req.b + u32::from(req.a))
+        .await
+        .unwrap();
+    let response = client.recv().await.unwrap();
+    assert_eq!(response.t, 42);
+}
+
+#[cfg(feature = "std")]
+#[tokio::test]
+async fn boxed_client_handle_can_move_after_synchronous_send() {
+    static STACK: TestNetStack = NetStack::new();
+
+    let server = STACK.endpoints().single_server::<ExampleEndpoint>(None);
+    let server = pin!(server);
+    let mut server = server.attach();
+
+    let client = STACK.endpoints().single_client::<ExampleEndpoint>();
+    let mut client = Box::pin(client).attach_boxed();
+    client
+        .send_request(Address::unknown(), &Example { a: 2, b: 40 }, None)
+        .unwrap();
+
+    let response_task = tokio::spawn(async move { client.recv().await });
+    server
+        .serve(async |req| req.b + u32::from(req.a))
+        .await
+        .unwrap();
+    assert_eq!(response_task.await.unwrap().unwrap().t, 42);
+}
+
+#[tokio::test]
 async fn req_resp_stack_vec() {
     static STACK: TestNetStack = NetStack::new();
 
