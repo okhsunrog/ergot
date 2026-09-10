@@ -289,6 +289,7 @@ pub mod raw {
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,
                 kind: base::FrameKind::ENDPOINT_RESP,
+                class: hdr.class,
                 ttl: base::DEFAULT_TTL,
             };
             self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)
@@ -324,6 +325,7 @@ pub mod raw {
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,
                 kind: base::FrameKind::ENDPOINT_RESP,
+                class: hdr.class,
                 ttl: base::DEFAULT_TTL,
             };
             self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)
@@ -359,6 +361,7 @@ pub mod raw {
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,
                 kind: base::FrameKind::ENDPOINT_RESP,
+                class: hdr.class,
                 ttl: base::DEFAULT_TTL,
             };
             self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)

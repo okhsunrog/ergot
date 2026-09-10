@@ -150,6 +150,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
             dst,
             any_all,
             kind: FrameKind::ENDPOINT_REQ,
+            class: E::CLASS,
             ttl: DEFAULT_TTL,
         };
         stack.send_ty(&hdr, req).map_err(ReqRespError::Local)?;
@@ -179,6 +180,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
             dst: req_hdr.src,
             any_all: None,
             kind: FrameKind::ENDPOINT_RESP,
+            class: req_hdr.class,
             ttl: DEFAULT_TTL,
         };
         self.inner.stack().send_ty::<E::Response>(&hdr, resp)
