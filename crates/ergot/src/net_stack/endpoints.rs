@@ -161,7 +161,6 @@ impl<NS: NetStackHandle> Endpoints<NS> {
 
     pub fn single_client<E: Endpoint>(self) -> crate::socket::endpoint::single::Client<E, NS>
     where
-        E::Request: Serialize + DeserializeOwned + Clone,
         E::Response: Serialize + DeserializeOwned + Clone,
     {
         crate::socket::endpoint::single::Client::new(self.inner, None)

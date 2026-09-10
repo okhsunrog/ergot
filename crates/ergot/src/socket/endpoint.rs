@@ -127,6 +127,7 @@ macro_rules! endpoint_client {
             NS: crate::net_stack::NetStackHandle,
         {
             hdl: super::raw::ClientHandle<'a, $sto, E, NS>,
+            request_pending: bool,
         }
 
         impl<E, NS, $(const $arr: usize)?> Client<E, NS, $($arr)?>
@@ -139,7 +140,10 @@ macro_rules! endpoint_client {
             pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, NS, $($arr)?> {
                 let this = self.project();
                 let hdl: super::raw::ClientHandle<'_, _, _, NS> = this.sock.attach();
-                ClientHandle { hdl }
+                ClientHandle {
+                    hdl,
+                    request_pending: false,
+                }
             }
 
             /// Attach a pinned boxed Client and return an owned, `'static`
@@ -155,6 +159,7 @@ macro_rules! endpoint_client {
                     unsafe { core::mem::transmute(self) };
                 ClientHandle {
                     hdl: raw.attach_boxed(),
+                    request_pending: false,
                 }
             }
         }
@@ -176,8 +181,9 @@ macro_rules! endpoint_client {
             /// Once this returns `Ok`, the request has been committed to the
             /// netstack. Call [`Self::recv`] later to await the response. A
             /// Client socket identifies responses by its unique source port,
-            /// so callers must keep at most one request outstanding per
-            /// handle.
+            /// so a second request is rejected until [`Self::recv`] receives
+            /// the response to the outstanding request. A failed send does not
+            /// mark a request as pending and may be retried.
             pub fn send_request(
                 &mut self,
                 dst: Address,
@@ -185,8 +191,12 @@ macro_rules! endpoint_client {
                 name: Option<&str>,
             ) -> Result<(), base::net_stack::ReqRespError>
             where
-                E::Request: Serialize + Clone + DeserializeOwned + 'static,
+                E::Request: Serialize + Clone + 'static,
             {
+                if self.request_pending {
+                    return Err(base::net_stack::ReqRespError::RequestPending);
+                }
+
                 let any_all = match dst.port_id {
                     0 => Some(AnyAllAppendix {
                         key: Key(E::REQ_KEY.to_bytes()),
@@ -210,12 +220,16 @@ macro_rules! endpoint_client {
                 self.hdl
                     .stack()
                     .send_ty(&hdr, req)
-                    .map_err(base::net_stack::ReqRespError::Local)
+                    .map_err(base::net_stack::ReqRespError::Local)?;
+                self.request_pending = true;
+                Ok(())
             }
 
             /// Receive a single response
             pub async fn recv(&mut self) -> Response<E::Response> {
-                self.hdl.recv().await
+                let response = self.hdl.recv().await;
+                self.request_pending = false;
+                response
             }
         }
     };

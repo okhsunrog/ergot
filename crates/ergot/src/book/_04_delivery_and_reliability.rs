@@ -117,6 +117,8 @@
 //!   register the waiter and inspect the current interface state without a
 //!   lost-wakeup window. A bare `wait().await` followed by a state read can
 //!   miss a transition that happens immediately before the waiter is linked.
+//!   Wakeups may coalesce, so observers should react to the latest state rather
+//!   than treating the queue as a log of every intermediate transition.
 //!
 //! Each interface carries an `InterfaceState`:
 //!
@@ -127,11 +129,13 @@
 //!   worker exits and you re-register.
 //!
 //! The canonical reliability loop is therefore: register the interface with
-//! `liveness` and `state_notify`, then use `wait_for_value(|| read_state())` so
-//! the condition is checked both before sleeping and after every wake. On
-//! `Active` mark the link up (and run any handshake), on `Inactive` wait a
-//! recovery window, and on `Down` (or once the recovery window expires) tear
-//! down and reconnect.
+//! `liveness` and `state_notify`, read and react to its initial state, then
+//! remember that state and use `wait_for_value()` with a closure that returns
+//! `Some(current)` only when `current != last_state`. The comparison is checked
+//! after the waiter is registered and after every wake, without busy-looping on
+//! an unchanged `Some(InterfaceState)`. On `Active` mark the link up (and run any
+//! handshake), on `Inactive` wait a recovery window, and on `Down` (or once the
+//! recovery window expires) tear down and reconnect.
 //!
 //! ## Backpressure, lossiness, and the absence of QoS
 //!
