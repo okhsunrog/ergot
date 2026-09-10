@@ -288,7 +288,6 @@ pub mod raw {
                 dst: hdr.src,
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,
-                seq_no: Some(hdr.seq_no),
                 kind: base::FrameKind::ENDPOINT_RESP,
                 ttl: base::DEFAULT_TTL,
             };
@@ -324,7 +323,6 @@ pub mod raw {
                 dst: hdr.src,
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,
-                seq_no: Some(hdr.seq_no),
                 kind: base::FrameKind::ENDPOINT_RESP,
                 ttl: base::DEFAULT_TTL,
             };
@@ -360,7 +358,6 @@ pub mod raw {
                 dst: hdr.src,
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,
-                seq_no: Some(hdr.seq_no),
                 kind: base::FrameKind::ENDPOINT_RESP,
                 ttl: base::DEFAULT_TTL,
             };
