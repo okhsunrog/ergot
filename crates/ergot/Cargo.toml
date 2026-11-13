@@ -192,7 +192,7 @@ embassy-usb-0_5     = { version = "0.5", default-features = false, optional = tr
 # embassy-usb-v0_6
 embassy-usb-0_6     = { version = "0.6", default-features = false, optional = true, package = "embassy-usb" }
 
-embassy-usb-0_6-preview = { git = "https://github.com/embassy-rs/embassy.git", rev = "a96b178bd7e451372e5d0c65f7c2a0b4d5c1fc1e", version = "0.6.0", package = "embassy-usb", default-features = false, features = ["device"], optional = true }
+embassy-usb-0_6-preview = { git = "https://github.com/embassy-rs/embassy.git", rev = "72f7affbdcddb9fdcf3fdcaff72c5dbc8b0be6b8", version = "0.6.0", package = "embassy-usb", default-features = false, features = ["device"], optional = true }
 
 # embassy-net-v0_7
 embassy-net-0_7     = { version = "0.7", optional = true, package = "embassy-net", features = ["tcp", "udp", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6"] }
