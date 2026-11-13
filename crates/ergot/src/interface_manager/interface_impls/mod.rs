@@ -13,7 +13,11 @@ pub mod tokio_udp;
 #[cfg(feature = "tokio-serial-v5")]
 pub mod tokio_serial_cobs;
 
-#[cfg(any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6"))]
+#[cfg(any(
+    feature = "embassy-usb-v0_5",
+    feature = "embassy-usb-v0_6",
+    feature = "embassy-usb-v0_6-preview"
+))]
 pub mod embassy_usb;
 
 #[cfg(any(feature = "embassy-net-v0_7", feature = "embassy-net-v0_9"))]

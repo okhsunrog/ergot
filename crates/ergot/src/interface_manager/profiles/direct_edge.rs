@@ -20,7 +20,11 @@ pub type EmbeddedIoManager<Q> =
     DirectEdge<crate::interface_manager::interface_impls::embedded_io::IoInterface<Q>>;
 
 /// Type alias for a [`DirectEdge`] profile using the embassy-usb interface.
-#[cfg(any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6"))]
+#[cfg(any(
+    feature = "embassy-usb-v0_5",
+    feature = "embassy-usb-v0_6",
+    feature = "embassy-usb-v0_6-preview"
+))]
 pub type EmbassyUsbManager<Q> =
     DirectEdge<crate::interface_manager::interface_impls::embassy_usb::EmbassyInterface<Q>>;
 

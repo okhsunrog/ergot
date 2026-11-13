@@ -121,8 +121,24 @@ pub mod embassy_usb_v0_5 {
     }
 }
 
+#[cfg(feature = "embassy-usb-v0_6-preview")]
+pub mod embassy_usb_v0_6_preview {
+    pub use super::embassy_usb_common::*;
+    pub use crate::interface_manager::interface_impls::embassy_usb::eusb_0_6_preview::{
+        WireStorage, tx_worker,
+    };
+}
+
 #[cfg(feature = "embassy-usb-v0_6")]
 pub mod embassy_usb_v0_6 {
+    pub use super::embassy_usb_common::*;
+    pub use crate::interface_manager::interface_impls::embassy_usb::eusb_0_6::{
+        WireStorage, tx_worker,
+    };
+}
+
+#[cfg(any(feature = "embassy-usb-v0_6", feature = "embassy-usb-v0_6-preview"))]
+mod embassy_usb_common {
     use crate::{
         exports::bbqueue::{
             BBQueue,
@@ -140,7 +156,6 @@ pub mod embassy_usb_v0_6 {
 
     pub use crate::interface_manager::interface_impls::embassy_usb::{
         DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
-        eusb_0_6::{WireStorage, tx_worker},
     };
 
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;

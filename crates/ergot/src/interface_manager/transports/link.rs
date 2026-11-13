@@ -52,7 +52,11 @@ impl<N: NetStackHandle> Link<N> {
     }
 
     /// Restore profile-owned addressing after a physical USB reconnect.
-    #[cfg(any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6"))]
+    #[cfg(any(
+        feature = "embassy-usb-v0_5",
+        feature = "embassy-usb-v0_6",
+        feature = "embassy-usb-v0_6-preview"
+    ))]
     pub(crate) fn establish(&self) {
         _ = self.nsh.stack().manage_profile(|im| {
             if matches!(
@@ -129,7 +133,11 @@ impl<N: NetStackHandle> Drop for Link<N> {
 #[cfg(all(
     test,
     feature = "tokio-std",
-    any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6")
+    any(
+        feature = "embassy-usb-v0_5",
+        feature = "embassy-usb-v0_6",
+        feature = "embassy-usb-v0_6-preview"
+    )
 ))]
 mod tests {
     use super::*;

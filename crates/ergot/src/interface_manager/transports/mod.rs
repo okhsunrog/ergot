@@ -19,6 +19,8 @@ pub mod eusb_0_5;
 
 #[cfg(feature = "embassy-usb-v0_6")]
 pub mod eusb_0_6;
+#[cfg(feature = "embassy-usb-v0_6-preview")]
+pub mod eusb_0_6_preview;
 
 #[cfg(feature = "tokio-std")]
 pub mod tokio_cobs_stream;
